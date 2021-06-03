@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -27,9 +26,6 @@ func main() {
 	r.HandleFunc("/v1/auth", GetTokenHandler).Methods(http.MethodPost)
 	r.HandleFunc("/v1/auth", ValidateTokenHandler).Methods(http.MethodGet)
 	http.ListenAndServe(":8080", r)
-
-	token, _ := generate("amarmend")
-	fmt.Println(token)
 }
 
 func ValidateTokenHandler(w http.ResponseWriter, r *http.Request) {
