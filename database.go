@@ -113,7 +113,7 @@ func AuthenticateUser(user *User) (bool, error) {
 
 func InsertToken(username string) error {
 	//TODO save generated token to database
-	token, _ := generate(username)
+	token, _ := generateToken(username)
 	fmt.Println(token)
 	return nil
 }
