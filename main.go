@@ -11,20 +11,22 @@ import (
 	"github.com/gorilla/mux"
 )
 
-type RestResponseWithBody struct {
-	IsOk bool `json:"is_ok"`
-	Msg  string `json:"msg"`
-	Data struct{
-		Access_token string `json:"access_token"`
-		Ca_token string `json:"ca_token"`
-		Is_valid bool `json:"is_valid"`
-	} `json:"data"`
-}
-
 type RestResponse struct{
 	IsOk bool `json:"is_ok"`
 	Msg  string `json:"msg"`
 }
+
+type TokenValidationResponse struct{
+	IsOk bool `json:"is_ok"`
+	Msg  string `json:"msg"`
+	IsValid bool `json:"is_valid"`
+} 
+
+type TokenGeneratingResponse struct{
+	IsOk bool `json:"is_ok"`
+	Msg  string `json:"msg"`
+	Token string `json:"token"`
+} 
 
 
 func main() {
@@ -41,6 +43,7 @@ func main() {
 func GetTokenHandler(w http.ResponseWriter, r *http.Request) {
 	
 	restResponse := RestResponse{}
+	tokenGeneratingResponse := TokenGeneratingResponse{}
 
 	body := new(bytes.Buffer)
 	io.Copy(body, r.Body)
@@ -65,50 +68,79 @@ func GetTokenHandler(w http.ResponseWriter, r *http.Request) {
 		resJson,_ := json.Marshal(restResponse)
 		w.WriteHeader(http.StatusInternalServerError)
 		w.Write(resJson)
-
 		return
 	}
 
-	if result {
-		token, err := generateToken(user.Email)
+	if !result {
+		restResponse.IsOk = false
+		restResponse.Msg = "User authentication failed!"
+		resJson,_ := json.Marshal(restResponse)
 
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(err.Error()))
-			return
-		}
-		user.JWT_token = token
-		err = putUser(ctx, user)
-		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("Error while save user info. Try again."))
-		}
-
-		w.Write([]byte("Token created successfully!\n" + token))
-	} else {
 		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte("User authentication failed!"))
+		w.Write(resJson)
+		return
 	}
+	token, err := generateToken(user.Email)
 
+	if err != nil {
+		restResponse.IsOk = false
+		restResponse.Msg = "Token generation failed!"
+		resJson,_ := json.Marshal(restResponse)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write(resJson)
+		return
+	}
+	user.JWT_token = token
+	err = saveUser(ctx, user)
+	if err != nil {
+		restResponse.IsOk = false
+		restResponse.Msg = "Error while saving generated token. Try again."
+		resJson,_ := json.Marshal(restResponse)
+
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write(resJson)
+		return
+	}
+	tokenGeneratingResponse.IsOk = true
+	tokenGeneratingResponse.Msg = "Token created successfully."
+	tokenGeneratingResponse.Token = token
+	resJson,_ := json.Marshal(tokenGeneratingResponse)
+	w.Write(resJson)
 }
 
 func ValidateTokenHandler(w http.ResponseWriter, r *http.Request) {
+	restResponse := RestResponse{}
+	tokenValidationResponse := TokenValidationResponse{}
 
 	body := new(bytes.Buffer)
 	io.Copy(body, r.Body)
 	result, err := validateToken(body.String())
 	if err != nil {
-		w.Write([]byte("Error occured while validating token! " + err.Error()))
+		restResponse.IsOk = false
+		restResponse.Msg = fmt.Sprintf("Error occured while validating token!\n %s", err.Error())
+		resJson,_ := json.Marshal(restResponse)
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write(resJson)
+		return
 	}
-	if result {
-		w.Write([]byte("true"))
-	} else {
-		w.Write([]byte("false"))
-	}
-
+	if !result {
+		tokenValidationResponse.IsOk = true
+		tokenValidationResponse.Msg = "Token is invalid"
+		tokenValidationResponse.IsValid = false
+		resJson,_ := json.Marshal(tokenValidationResponse)
+		w.Write(resJson)
+		return
+	} 
+	
+	tokenValidationResponse.IsOk = true
+	tokenValidationResponse.Msg = "Token is valid"
+	tokenValidationResponse.IsValid = true
+	resJson,_ := json.Marshal(tokenValidationResponse)
+	w.Write(resJson)
 }
 
 func CreateUserHandler(w http.ResponseWriter, r *http.Request) {
+	restResponse := RestResponse{}
 
 	body := new(bytes.Buffer)
 	io.Copy(body, r.Body)
@@ -118,29 +150,42 @@ func CreateUserHandler(w http.ResponseWriter, r *http.Request) {
 	user := User{}
 	err := json.Unmarshal(body.Bytes(), &user)
 	if err != nil {
-		fmt.Println(err)
-		w.Write([]byte("Error parsing json body."))
+		restResponse.IsOk = false
+		restResponse.Msg = fmt.Sprintf("Error parsing json body!\n %s", err.Error())
+		resJson,_ := json.Marshal(restResponse)
+
 		w.WriteHeader(http.StatusBadRequest)
+		w.Write(resJson)
 		return
 	}
 	if !user.checkField() {
-		w.Write([]byte("Missing filed\n"))
+		restResponse.IsOk = false
+		restResponse.Msg = "One or more required field if missing."
+		resJson,_ := json.Marshal(restResponse)
+
 		w.WriteHeader(http.StatusBadRequest)
+		w.Write(resJson)
 		return
 	}
 	fmt.Println(&user)
-	putUser(ctx, &user)
+	err = saveUser(ctx, &user)
 	if err != nil {
-		w.Write([]byte("Insert failed.\n."))
-		w.WriteHeader(http.StatusBadRequest)
+		restResponse.IsOk = false
+		restResponse.Msg = "Insert failed.\n" + err.Error()
+		resJson,_ := json.Marshal(restResponse)
+
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write(resJson)
 		return
 	}
-
-	w.Write([]byte("User created successfully.\n"))
-
+	restResponse.IsOk = true
+	restResponse.Msg = "User created successfully.\n"
+	resJson,_ := json.Marshal(restResponse)
+	w.Write(resJson)
 }
 
 func UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
+	restResponse := RestResponse{}
 
 	body := new(bytes.Buffer)
 	io.Copy(body, r.Body)
@@ -150,29 +195,52 @@ func UpdateUserHandler(w http.ResponseWriter, r *http.Request) {
 	user := User{}
 	err := json.Unmarshal(body.Bytes(), &user)
 	if err != nil {
-		fmt.Println(err)
-		w.Write([]byte("Error parsing json body."))
+		restResponse.IsOk = false
+		restResponse.Msg = "Error parsing json body.\n" + err.Error()
+		resJson,_ := json.Marshal(restResponse)
+		w.Write(resJson)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 	old_user, err := getUser(ctx, user.Email)
 	if err != nil {
+		restResponse.IsOk = false
+		restResponse.Msg = "Error while getting \n" + err.Error()
+		resJson,_ := json.Marshal(restResponse)
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte(err.Error()))
+		w.Write(resJson)
 	}
 	if !user.checkField() {
-		w.Write([]byte("Missing filed."))
+		restResponse.IsOk = false
+		restResponse.Msg = "One or more required field if missing."
+		resJson,_ := json.Marshal(restResponse)
+
 		w.WriteHeader(http.StatusBadRequest)
+		w.Write(resJson)
 		return
 	}
 	user.CA_token = old_user.CA_token
 	user.JWT_token = old_user.JWT_token
 
-	putUser(ctx, &user)
+	saveUser(ctx, &user)
+	err = saveUser(ctx, &user)
+	if err != nil {
+		restResponse.IsOk = false
+		restResponse.Msg = "Error occured while updating user info."
+		resJson,_ := json.Marshal(restResponse)
 
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write(resJson)
+		return
+	}
+	restResponse.IsOk = true
+	restResponse.Msg = "User info updated successfully.\n"
+	resJson,_ := json.Marshal(restResponse)
+	w.Write(resJson)
 }
 
 func DeleteUserHandler(w http.ResponseWriter, r *http.Request) {
+	restResponse := RestResponse{}
 
 	body := new(bytes.Buffer)
 	io.Copy(body, r.Body)
@@ -182,17 +250,27 @@ func DeleteUserHandler(w http.ResponseWriter, r *http.Request) {
 	user := User{}
 	err := json.Unmarshal(body.Bytes(), &user)
 	if err != nil {
-		fmt.Println(err)
-		w.Write([]byte("Error parsing json body."))
+		restResponse.IsOk = false
+		restResponse.Msg = "Error parsing json body."
+		resJson,_ := json.Marshal(restResponse)
+
 		w.WriteHeader(http.StatusBadRequest)
+		w.Write(resJson)
 		return
 	}
 
-	deleteUser(ctx, user.Email)
+	err = deleteUser(ctx, user.Email)
 	if err != nil {
-		w.Write([]byte("Error delete user."))
+		restResponse.IsOk = false
+		restResponse.Msg = "Failed to delete user."
+		resJson,_ := json.Marshal(restResponse)
+
+		w.Write([]byte(resJson))
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	w.Write([]byte("Success delete user."))
+	restResponse.IsOk = true
+	restResponse.Msg = "Successfully deleted user."
+	resJson,_ := json.Marshal(restResponse)
+	w.Write(resJson)
 }

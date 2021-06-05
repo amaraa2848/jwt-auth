@@ -30,7 +30,7 @@ type EtcdConfig struct {
 	Password  string
 }
 
-func InitEtcdClient(config *EtcdConfig) *clientv3.Client {
+func initEtcdClient(config *EtcdConfig) *clientv3.Client {
 
 	cli, err := clientv3.New(clientv3.Config{Endpoints: config.Endpoints})
 	if err != nil {
@@ -41,7 +41,7 @@ func InitEtcdClient(config *EtcdConfig) *clientv3.Client {
 }
 
 func getUser(ctx context.Context, email string) (*User, error) {
-	cli := InitEtcdClient(&EtcdConfig{Endpoints: []string{"localhost:2379"}})
+	cli := initEtcdClient(&EtcdConfig{Endpoints: []string{"localhost:2379"}})
 	defer cli.Close()
 	get_result, err := cli.Get(ctx, email)
 
@@ -60,8 +60,8 @@ func getUser(ctx context.Context, email string) (*User, error) {
 	return user, nil
 }
 
-func putUser(ctx context.Context, user *User) error {
-	cli := InitEtcdClient(&EtcdConfig{Endpoints: []string{"localhost:2379"}})
+func saveUser(ctx context.Context, user *User) error {
+	cli := initEtcdClient(&EtcdConfig{Endpoints: []string{"localhost:2379"}})
 	defer cli.Close()
 
 	res, err := getUser(ctx, user.Email)
@@ -94,7 +94,7 @@ func putUser(ctx context.Context, user *User) error {
 }
 
 func deleteUser(ctx context.Context, email string) error {
-	cli := InitEtcdClient(&EtcdConfig{Endpoints: []string{"localhost:2379"}})
+	cli := initEtcdClient(&EtcdConfig{Endpoints: []string{"localhost:2379"}})
 	defer cli.Close()
 
 	del_result, err := cli.Delete(ctx, email)
